@@ -1,0 +1,130 @@
+#!/usr/bin/env ruby
+require 'rubygems'
+require 'net/http'
+require 'json'
+
+class Color
+  RESET="\e[0m"
+
+  BLACK="30"
+  RED="31"
+  GREEN="32"
+  YELLOW="33"
+  BLUE="34"
+  MAGENTA="35"
+  CYAN="36"
+  WHITE="37"
+
+  BLACKBG="40"
+  REDBG="41"
+  GREENBG="42"
+  YELLOWBG="43"
+  BLUEBG="44"
+  MAGENTABG="45"
+  CYANBG="46"
+  WHITEBG="47"
+
+  BOLD="1"
+  FAINT="2"  # Doesn't work in xterm
+  ITALIC="3" # Doesn't work in xterm
+  BLINK="5"
+  RAPID="6"  # Doesn't work in xterm
+  CONCEALED="8"
+  SUB="48"   # Doesn't work in xterm
+  SUPER="49" # Doesn't work in xterm
+
+  def Color.prepare(message, colors=nil)
+    msg = ""
+    if colors
+      msg = "\e["
+      colors.split(" ").each_with_index do |c,i|
+        msg += ";" if i
+        msg += eval c.upcase
+      end
+      msg += "m"
+    end
+    msg += message
+    if colors
+      msg += "\e[0m"
+    end
+    msg
+  end
+
+  def Color.puts(message, colors=nil)
+    puts Color.prepare(message, colors)
+  end
+
+  def Color.print(message, colors=nil)
+    print Color.prepare(message, colors)
+  end
+end
+
+def startDaemonIfNotStarted
+  if 0 == %x{ps ax | egrep -v 'egrep' | egrep -c 'node ./jspawnspecd'}.to_i
+    puts "Starting jSpawnSpec Daemon"
+    fork do
+      %x{./jspawnspecd}
+    end
+  else
+    puts "jSpawnSpec Daemon Already Started"
+  end
+end
+
+def getSpecPaths(paths)
+  absolute_paths = []
+  paths.each do |file|
+    if File.exists? file
+      if File.directory? file
+        absolute_paths << Dir.glob("#{file}/**/*.js").map {|f| File.expand_path(f)}
+      else
+        absolute_paths << File.expand_path(file)
+      end
+    end
+  end
+  absolute_paths.flatten
+end
+
+def startSpecs(specs)
+  response = false
+  while !response
+    begin
+      Net::HTTP.start("localhost", 27182) do |http|
+        @session_id = JSON.parse(http.get("/start").body)["session_id"]
+        response = true
+        specs.each do |spec|
+          http.get("/test/#{@session_id}#{spec}")
+        end
+      end
+    rescue StandardError
+    end
+  end
+end
+
+def pollForResults(number_of_specs)
+  while 0 != number_of_specs
+    begin
+      Net::HTTP.start("localhost", 27182) do |http|
+        results = JSON.parse(http.get("/results/#{@session_id}").body)["results"]
+        puts results.inspect
+        results.each do |result|
+          result.results.each do |spec|
+            if (spec)
+              Color.print(".", Color.GREEN)
+            else
+              Color.print(".", Color.RED)
+            end
+          end
+          number_of_specs -= 1
+        end
+      end
+    rescue StandardError
+    end
+    sleep 1
+  end
+end
+
+puts "(in #{Dir.pwd})"
+startDaemonIfNotStarted
+specs_to_run = getSpecPaths(ARGV)
+startSpecs(specs_to_run)
+pollForResults(specs_to_run.length)

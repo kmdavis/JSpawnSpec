@@ -1,0 +1,43 @@
+<html>
+  <head>
+    <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js"></script>
+    <script type="text/javascript">
+      $(function () {
+        var specs = [],
+          fakeSpecs = function (spec) {
+            setTimeout(function () {
+              var results = [], i, max = Math.floor(Math.random() * 5) + 1;
+              for (i = 0; i < max; i += 1) {
+                results.push(Math.floor(Math.random() * 2));
+              }
+              $.getJSON("/done/" + spec.id + "/" + results.join("/"));
+              runSpecs();
+            }, Math.floor(Math.random() * 900) + 100);
+          },
+          runSpecs = function () {
+            if (0 !== specs.length) {
+              fakeSpecs(specs.shift());
+            } else {
+              getSpecs();
+            }
+          },
+          getSpecs = function () {
+            if (0 ===  specs.length) {
+              $.getJSON("/get", function (response) {
+                if (0 === response.specs.length) {
+                  setTimeout(getSpecs, 5000);
+                } else {
+                  specs = response.specs;
+                  runSpecs();
+                }
+              });
+            }
+          };
+        getSpecs();
+      });
+    </script>
+  </head>
+  <body>
+    <iframe id="test_container"></iframe>
+  </body>
+</html>
